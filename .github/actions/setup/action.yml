@@ -3,10 +3,10 @@ description: What a build needs from apt, and Test::Nginx out of a cache.
 
 inputs:
   packages:
-    description: Extra apt packages this job needs
+    description: Extra apt packages this job needs, on top of what the module
+      itself needs
     required: false
-    # The module links against PAM.
-    default: 'libpam0g-dev'
+    default: ''
   test-nginx:
     description: Install Test::Nginx and export PERL5LIB
     required: false
@@ -22,7 +22,11 @@ runs:
         EXTRA_PACKAGES: ${{ inputs.packages }}
         WANT_TEST_NGINX: ${{ inputs.test-nginx }}
       run: |
-        packages="libpcre2-dev zlib1g-dev libssl-dev $EXTRA_PACKAGES"
+        # What this module itself links against.  Deliberately not an
+        # input: a job that asks for valgrind would otherwise replace it
+        # and the build would fail on a missing header.
+        module_packages='libpam0g-dev'
+        packages="libpcre2-dev zlib1g-dev libssl-dev $module_packages $EXTRA_PACKAGES"
         if [ "$WANT_TEST_NGINX" = true ]; then
           packages="$packages cpanminus"
         fi

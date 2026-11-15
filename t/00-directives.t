@@ -4,6 +4,11 @@
 # which belongs in a test on a machine that has both.  What is asked here
 # is what nginx accepts, and that the module refuses a request before it
 # ever reaches PAM when there are no credentials.
+#
+# Note what the protected locations do NOT have: a "return".  return runs
+# in the rewrite phase, before the access phase this module sits in, so a
+# location with one answers without ever asking the module.  The locations
+# below serve a file instead, which happens after access.
 
 use Test::Nginx::Socket 'no_plan';
 
@@ -18,7 +23,7 @@ __DATA__
         auth_pam              "test realm";
         auth_pam_service_name "nginx-test";
         auth_pam_set_pam_env  on;
-        return 200 "never reached\n";
+        root                  html;
     }
 --- request
 GET /t
@@ -31,7 +36,7 @@ GET /t
     location /t {
         auth_pam              "a realm of its own";
         auth_pam_service_name "nginx-test";
-        return 200 "never reached\n";
+        root                  html;
     }
 --- request
 GET /t
@@ -62,7 +67,7 @@ through
         auth_pam_service_name "nginx-test";
 
         location /outer/inner {
-            return 200 "never reached\n";
+            root html;
         }
     }
 --- request
@@ -73,15 +78,18 @@ WWW-Authenticate: Basic realm="inherited realm"
 
 
 
-=== TEST 5: credentials that PAM cannot know are refused, not accepted
+=== TEST 5: credentials PAM cannot know are refused, not let through
 --- config
     location /t {
         auth_pam              "test realm";
         auth_pam_service_name "nginx-no-such-service";
-        return 200 "never reached\n";
+        root                  html;
     }
 --- more_headers
 Authorization: Basic bm9ib2R5Ondyb25n
 --- request
 GET /t
---- error_code: 403
+# 401 and not 403: PAM refused, and the module asks again rather than
+# forbidding, which is what HTTP basic authentication is supposed to do.
+# What matters here is that the request did not get through to the file.
+--- error_code: 401
