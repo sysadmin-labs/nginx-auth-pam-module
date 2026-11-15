@@ -1,10 +1,10 @@
 # Changelog
 
-## Unreleased
+## 1.6.0
 
-First release from this repository. It continues Sergio Talens-Oliag's
-module, whose history is intact here; his repository has had no commit
-since June 2023.
+First release from this repository, carrying on from upstream's v1.5.5. It
+continues Sergio Talens-Oliag's module, whose history is intact here; his
+repository has had no commit since June 2023.
 
 ### Fixed
 
