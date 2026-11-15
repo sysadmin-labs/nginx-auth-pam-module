@@ -241,9 +241,26 @@ static void set_to_pam_env(pam_handle_t *pamh, ngx_http_request_t *r,
                            char *key, char *value)
 {
         if (key != NULL && value != NULL) {
-                size_t size = strlen(key) + strlen(value) + 1 * sizeof(char);
+                /*
+                 * key, '=', value and the terminator.  The size used to be
+                 * strlen(key) + strlen(value) + 1, which is one byte short
+                 * of what sprintf writes -- a heap overflow of one byte on
+                 * every call, whenever auth_pam_set_pam_env is on.
+                 */
+                size_t size = strlen(key) + 1 + strlen(value) + 1;
                 char *key_value_pair = ngx_palloc(r->pool, size);
-                sprintf(key_value_pair, "%s=%s", key, value);
+
+                /*
+                 * And the allocation was not checked: out of memory meant
+                 * writing to a null pointer, which is what gcc reports as
+                 * a null destination under -Wformat-overflow.
+                 */
+                if (key_value_pair == NULL) {
+                        return;
+                }
+
+                ngx_snprintf((u_char *) key_value_pair, size, "%s=%s%Z",
+                             key, value);
 
                 pam_putenv(pamh, key_value_pair);
         }
@@ -259,7 +276,10 @@ static char* ngx_strncpy_s(ngx_str_t source, ngx_pool_t *pool)
 {
         // allocate memory in pool
         char* destination = ngx_palloc(pool, source.len + 1);
-        strncpy(destination, (char *) source.data, source.len);
+        if (destination == NULL) {
+                return NULL;
+        }
+        ngx_memcpy(destination, source.data, source.len);
         // add null terminator
         destination[source.len] = '\0';
         return destination;
@@ -272,7 +292,22 @@ static void add_request_info_to_pam_env(pam_handle_t *pamh,
                                         ngx_http_request_t *r)
 {
         char *request_info = ngx_strncpy_s(r->request_line, r->pool);
-        char *host_info = ngx_strncpy_s(r->headers_in.host->value, r->pool);
+        char *host_info = NULL;
+
+        /*
+         * headers_in.host is NULL when the request carried no Host header.
+         * HTTP/1.1 requires one and nginx rejects a request without it,
+         * but HTTP/1.0 does not, so the field can be NULL here -- and
+         * dereferencing it took the worker down.  Reachable from the
+         * network by anyone, on any server with auth_pam_set_pam_env on:
+         *
+         *     printf 'GET /t HTTP/1.0\r\nAuthorization: Basic ...\r\n\r\n'
+         *
+         * answered nothing at all and the process was gone.
+         */
+        if (r->headers_in.host != NULL) {
+                host_info = ngx_strncpy_s(r->headers_in.host->value, r->pool);
+        }
 
         set_to_pam_env(pamh, r, "REQUEST", request_info);
         set_to_pam_env(pamh, r, "HOST", host_info);

@@ -33,9 +33,16 @@ Sergio Talens-Oliag's module, continued here with its history intact. His
 repository has had no commit since June 2023 and the FreeBSD port builds
 from it, which is the reason for this one.
 
-Nothing in the module itself needed changing so far. What is new is the
-scaffolding: a build against the releases the ports ship, the sanitizers,
-valgrind, CodeQL, a reload gate and a FreeBSD run.
+**Fixed here:** three faults on the `auth_pam_set_pam_env on` path. A
+request without a Host header took the worker down -- NULL dereference,
+reachable from the network with a one-line HTTP/1.0 request. The buffer
+for a PAM environment entry was one byte short of what was written into
+it, on every call. And the allocation behind it was never checked, so out
+of memory meant writing to a null pointer. Each has a gate in
+`t/00-directives.t`.
+
+Alongside that, the scaffolding: a build against the releases the ports
+ship, the sanitizers, valgrind, CodeQL, a reload gate and a FreeBSD run.
 
 ## Requirements
 

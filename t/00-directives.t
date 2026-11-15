@@ -93,3 +93,42 @@ GET /t
 # forbidding, which is what HTTP basic authentication is supposed to do.
 # What matters here is that the request did not get through to the file.
 --- error_code: 401
+
+
+
+=== TEST 6: credentials with the PAM environment turned on
+--- config
+    location /t {
+        auth_pam              "env realm";
+        auth_pam_service_name "nginx-no-such-service";
+        auth_pam_set_pam_env  on;
+        root                  html;
+    }
+--- more_headers
+Authorization: Basic bm9ib2R5Ondyb25n
+--- request
+GET /t
+# This is the one case that reaches set_to_pam_env, which builds
+# "KEY=value" into a buffer of its own.  The status is the same 401 as
+# without the flag; what this case is for is to walk that code at all, so
+# the sanitizers and valgrind have something to look at.
+--- error_code: 401
+
+
+
+=== TEST 7: HTTP/1.0 without a Host header does not take the worker down
+--- config
+    location /t {
+        auth_pam              "env realm";
+        auth_pam_service_name "nginx-no-such-service";
+        auth_pam_set_pam_env  on;
+        root                  html;
+    }
+--- raw_request eval
+"GET /t HTTP/1.0\r\nAuthorization: Basic bm9ib2R5Ondyb25n\r\n\r\n"
+# HTTP/1.1 requires a Host header and nginx refuses a request without
+# one, but HTTP/1.0 does not, so r->headers_in.host is NULL here.  With
+# auth_pam_set_pam_env on, dereferencing it segfaulted the worker -- no
+# answer at all, reachable from the network.
+--- response_body_like: 401 Authorization Required
+--- error_code: 401
