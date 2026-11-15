@@ -1,95 +1,119 @@
-# ngx_http_auth_pam_module
+# nginx-auth-pam-module
 
-## Nginx module to use PAM for simple http authentication
+[![Build][build-test-badge]][build-test-link]
+[![Lint][lint-badge]][lint-link]
+[![CodeQL][codeql-badge]][codeql-link]
+[![A/UBSan][sanitizers-badge]][sanitizers-link]
+[![Valgrind][valgrind-badge]][valgrind-link]
+[![Reload][reload-badge]][reload-link]
+[![FreeBSD][freebsd-badge]][freebsd-link]
 
-### Compilation
+[build-test-badge]: https://github.com/sysadmin-labs/nginx-auth-pam-module/actions/workflows/build-test.yml/badge.svg
+[build-test-link]: https://github.com/sysadmin-labs/nginx-auth-pam-module/actions/workflows/build-test.yml
+[lint-badge]: https://github.com/sysadmin-labs/nginx-auth-pam-module/actions/workflows/lint.yml/badge.svg
+[lint-link]: https://github.com/sysadmin-labs/nginx-auth-pam-module/actions/workflows/lint.yml
+[codeql-badge]: https://github.com/sysadmin-labs/nginx-auth-pam-module/actions/workflows/codeql.yml/badge.svg
+[codeql-link]: https://github.com/sysadmin-labs/nginx-auth-pam-module/actions/workflows/codeql.yml
+[sanitizers-badge]: https://github.com/sysadmin-labs/nginx-auth-pam-module/actions/workflows/sanitizers.yml/badge.svg
+[sanitizers-link]: https://github.com/sysadmin-labs/nginx-auth-pam-module/actions/workflows/sanitizers.yml
+[valgrind-badge]: https://github.com/sysadmin-labs/nginx-auth-pam-module/actions/workflows/valgrind.yml/badge.svg
+[valgrind-link]: https://github.com/sysadmin-labs/nginx-auth-pam-module/actions/workflows/valgrind.yml
+[reload-badge]: https://github.com/sysadmin-labs/nginx-auth-pam-module/actions/workflows/reload.yml/badge.svg
+[reload-link]: https://github.com/sysadmin-labs/nginx-auth-pam-module/actions/workflows/reload.yml
+[freebsd-badge]: https://github.com/sysadmin-labs/nginx-auth-pam-module/actions/workflows/freebsd.yml/badge.svg
+[freebsd-link]: https://github.com/sysadmin-labs/nginx-auth-pam-module/actions/workflows/freebsd.yml
 
-When compiling from source build as usual adding the ``--add-module`` option:
+HTTP Basic authentication in nginx against PAM, so a location can be opened
+to the accounts the system already knows instead of a password file kept
+beside them.
 
-	./configure --add-module=$PATH_TO_MODULE
+## Where this comes from
 
-or if you want to build the module as dynamic use the ``--add-dynamic-module``
-option.
+Sergio Talens-Oliag's module, continued here with its history intact. His
+repository has had no commit since June 2023 and the FreeBSD port builds
+from it, which is the reason for this one.
 
-If you are using a Debian GNU/Linux distribution install the ``nginx-full``
-package; the module has been included in the debian package since version
-``1.1.6-1``, so it is available on all stable distributions since the *wheezy*
-release.
+Nothing in the module itself needed changing so far. What is new is the
+scaffolding: a build against the releases the ports ship, the sanitizers,
+valgrind, CodeQL, a reload gate and a FreeBSD run.
 
-### Configuration
+## Requirements
 
-The module only has two directives:
+nginx 1.28 or newer, and PAM. On FreeBSD PAM is in the base system; on
+Debian and Ubuntu it is `libpam0g-dev`.
 
-- ``auth_pam``: This is the http authentication realm. If given the value
-  ``off`` the module is disabled (needed when we want to override the value
-  set on a lower-level directive).
+## Building
 
-- ``auth_pam_service_name``: this is the PAM service name and by default it is
-  set to ``nginx``.
+```sh
+./configure --add-module=/path/to/nginx-auth-pam-module
+```
 
-### Examples
+As a loadable module, `--add-dynamic-module=` and then
 
-To protect everything under ``/secure`` you will add the following to the
-``nginx.conf`` file:
+```nginx
+load_module modules/ngx_http_auth_pam_module.so;
+```
 
-	location /secure {
-	    auth_pam              "Secure Zone";
-	    auth_pam_service_name "nginx";
-	}
+## Quick start
 
-Note that the module runs as the web server user, so the PAM modules used must
-be able to authenticate the users without being root; that means that if you
-want to use the ``pam_unix.so`` module to autenticate users you need to let the
-web server user to read the ``/etc/shadow`` file if that does not scare you (on
-Debian like systems you can add the ``www-data`` user to the ``shadow`` group).
+```nginx
+location /private/ {
+    auth_pam              "Restricted";
+    auth_pam_service_name "nginx";
+}
+```
 
-As an example, to authenticate users against an LDAP server (using the
-``pam_ldap.so`` module) you will use an ``/etc/pam.d/nginx`` like the
-following:
+`/etc/pam.d/nginx` decides what counts as a valid account. nginx normally
+runs unprivileged, so a stack that reads `/etc/shadow` will not work
+without help; `pam_unix` through a helper, LDAP or Kerberos will.
 
-	auth    required     /lib/security/pam_ldap.so
-	account required     /lib/security/pam_ldap.so
+## Directives
 
-If you also want to limit the users from LDAP that can authenticate you can
-use the ``pam_listfile.so`` module; to limit who can access resources under
-``/restricted`` add the following to the ``nginx.conf`` file:
+### auth\_pam
 
-	location /restricted {
-	    auth_pam              "Restricted Zone";
-	    auth_pam_service_name "nginx_restricted";
-	}
+|Syntax |`auth_pam realm \| off`|
+|-------|---|
+|Default|`off`|
+|Context|http, server, location, limit\_except|
 
-Use the following ``/etc/pam.d/nginx_restricted`` file:
+The realm to send in `WWW-Authenticate`, which switches the module on.
+`off` switches it off again in a nested location. The realm may contain
+variables.
 
-	auth    required     /lib/security/pam_listfile.so onerr=fail item=user \
-	                     sense=allow file=/etc/nginx/restricted_users
-	auth    required     /lib/security/pam_ldap.so
-	account required     /lib/security/pam_ldap.so
+### auth\_pam\_service\_name
 
-And add the users allowed to authenticate to the ``/etc/nginx/restricted_users``
-(remember that the web server user has to be able to read this file).
+|Syntax |`auth_pam_service_name name`|
+|-------|---|
+|Default|`nginx`|
+|Context|http, server, location, limit\_except|
 
-### PAM Environment
+The PAM service to authenticate against, meaning the file of that name
+under `/etc/pam.d`.
 
-If you want use the ``pam_exec.so`` plugin for request based authentication the
-module can add to the PAM environment the ``HOST`` and ``REQUEST`` variables if
-you set the ``auth_pam_set_pam_env`` flag::
+### auth\_pam\_set\_pam\_env
 
-	location /pam_exec_protected {
-	  auth_pam              "Exec Zone";
-	  auth_pam_service_name "nginx_exec";
-	  auth_pam_set_pam_env  on;
-	}
+|Syntax |`auth_pam_set_pam_env on \| off`|
+|-------|---|
+|Default|`off`|
+|Context|http, server, location, limit\_except|
 
-With this configuration if you access an URL like:
+Pass the request's own details into the PAM environment, so a module in
+the stack can see them: `REMOTE_ADDR`, `REMOTE_PORT`, `SERVER_ADDR`,
+`SERVER_PORT`, `SERVER_NAME`, `REQUEST_METHOD` and `REQUEST_URI`.
 
-	http://localhost:8000/pam_exec_protected/page?foo=yes&bar=too
+## Testing
 
-the PAM environment will include the following variables:
+```sh
+ci/build.sh 1.30.6 /tmp/nginx-test
+TEST_NGINX_BINARY=/tmp/nginx-test/sbin/nginx prove -r t/
+ci/reload.sh /tmp/nginx-test/sbin/nginx
+```
 
-	HOST=localhost:8000
-	REQUEST=GET /pam_exec_protected/page?foo=yes&bar=too HTTP/1.1
+The suite does not authenticate anybody, which would need a PAM service
+and an account on the machine running it. It asks what nginx accepts, and
+that a request without credentials is refused with this module's realm in
+the challenge.
 
-You may use this information for request based authentication.
-You need a recent pam release (>= version 1.0.90) to expose environment
-variables to pam_exec.
+## License
+
+BSD 2-Clause. See `LICENSE`.
