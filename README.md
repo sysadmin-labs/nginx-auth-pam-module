@@ -27,23 +27,6 @@ HTTP Basic authentication in nginx against PAM, so a location can be opened
 to the accounts the system already knows instead of a password file kept
 beside them.
 
-## Where this comes from
-
-Sergio Talens-Oliag's module, continued here with its history intact. His
-repository has had no commit since June 2023 and the FreeBSD port builds
-from it, which is the reason for this one.
-
-**Fixed here:** three faults on the `auth_pam_set_pam_env on` path. A
-request without a Host header took the worker down -- NULL dereference,
-reachable from the network with a one-line HTTP/1.0 request. The buffer
-for a PAM environment entry was one byte short of what was written into
-it, on every call. And the allocation behind it was never checked, so out
-of memory meant writing to a null pointer. Each has a gate in
-`t/00-directives.t`.
-
-Alongside that, the scaffolding: a build against the releases the ports
-ship, the sanitizers, valgrind, CodeQL, a reload gate and a FreeBSD run.
-
 ## Requirements
 
 nginx 1.28 or newer, and PAM. On FreeBSD PAM is in the base system; on
