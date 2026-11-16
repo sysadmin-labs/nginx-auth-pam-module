@@ -378,12 +378,23 @@ ngx_http_auth_pam_authenticate(ngx_http_request_t *r,
 
     /* send client IP address to PAM */
     char *client_ip_addr = ngx_strncpy_s(r->connection->addr_text, r->pool);
+    if (client_ip_addr == NULL) {
+        pam_end(pamh, PAM_SUCCESS);
+        return NGX_HTTP_INTERNAL_SERVER_ERROR;
+    }
+
     if ((rc = pam_set_item(pamh, PAM_RHOST, client_ip_addr)) != PAM_SUCCESS) {
         ngx_log_debug1(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
-                      "PAM: Could not set item PAM_RHOST: %s",
-                      pam_strerror(pamh, rc));
+                       "PAM: Could not set item PAM_RHOST: %s",
+                       pam_strerror(pamh, rc));
+        /*
+         * Every other way out of this function ends the PAM transaction.
+         * This one did not, so a failure here left the handle and the PAM
+         * modules it had loaded in the worker for the rest of its life.
+         */
+        pam_end(pamh, rc);
         return NGX_HTTP_INTERNAL_SERVER_ERROR;
-  }
+    }
 
     if (alcf->set_pam_env) {
         add_request_info_to_pam_env(pamh, r);
